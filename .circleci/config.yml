@@ -42,6 +42,94 @@ jobs:
           command: |
             docker login --username $DOCKER_USERNAME --password $DOCKER_PASSWORD            
             docker push "thongnq2/dev-ops-project-5:${CIRCLE_WORKFLOW_ID:0:7}"
+
+  setup-eks-cluster:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run: yum install -y tar gzip
+      - run:
+          name: install eksctl
+          command: |
+            ARCH=amd64
+            PLATFORM=$(uname -s)_$ARCH
+            curl -sLO "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz"
+            tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp && rm eksctl_$PLATFORM.tar.gz
+            mv /tmp/eksctl /usr/local/bin
+
+      - run: 
+          name: Create cluster if not exist
+          command: |
+            if eksctl get cluster --region=us-east-1 --name "my-cluster"
+            then
+              echo "Cluster my-cluster is exist"
+            else
+              eksctl create cluster --region=us-east-1 --name "my-cluster"
+            fi
+
+  deploy:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run: yum install -y tar gzip
+      - run:
+          name: Install kubectl
+          command: |
+            curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
+            install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+      - run:
+          name: Config kubectl connect to aws
+          command: |
+            aws eks update-kubeconfig --region us-east-1  --name my-cluster
+      - run:
+          name: create pod
+          command: |
+            kubectl run cloud-devops-project5-${CIRCLE_WORKFLOW_ID:0:7} --image="thongnq2/dev-ops-project-5:${CIRCLE_WORKFLOW_ID:0:7}" --port 80
+      - run:
+          name: expose pod
+          command: |
+            kubectl expose pod cloud-devops-project5-${CIRCLE_WORKFLOW_ID:0:7} --type=LoadBalancer --port=80
+            sleep 1m
+      - run:
+          name: extract IP address of app
+          command: |
+            cd .circleci
+            
+            ip_address=$(kubectl get services cloud-devops-project5-${CIRCLE_WORKFLOW_ID:0:7} --output jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            echo $ip_address >> ip_address.txt
+      - persist_to_workspace:
+          root: ~/
+          paths:
+            - project/.circleci/ip_address.txt
+  
+  smoke-test:
+    docker:
+      - image: python:3.7.3-stretch
+    steps:
+      - checkout
+      - attach_workspace:
+          at: ~/
+      - run:
+          name: Smoke test.
+          command: |
+              cd .circleci
+            
+              export APP_IP=$(cat ip_address.txt)
+              
+              export APP_ENDPOINT="http://${APP_IP}/"
+
+              echo ${APP_ENDPOINT} 
+              sleep 30s
+              curl ${APP_ENDPOINT} > test.txt
+              if cat test.txt | grep "hello"
+              then
+                exit 0
+              else
+                exit 1
+              fi
+
 workflows:
   say-hello-workflow:
     jobs:
@@ -50,5 +138,12 @@ workflows:
           requires: [package]
       - build-iamge:
           requires: [test]
+      - setup-eks-cluster:
+          requires: [build-iamge]
+      - deploy:
+          requires: [setup-eks-cluster]
+      - smoke-test:
+          requires: [deploy]
+
         
 
