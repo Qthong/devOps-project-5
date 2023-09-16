@@ -90,7 +90,7 @@ jobs:
       - run:
           name: expose pod
           command: |
-            kubectl expose pod cloud-devops-project5-${CIRCLE_WORKFLOW_ID:0:7} --type=LoadBalancer --port=80
+            kubectl expose pod cloud-devops-project5-${CIRCLE_WORKFLOW_ID:0:7} --type=LoadBalancer --port=8080
             sleep 1m
       - run:
           name: extract IP address of app
@@ -118,7 +118,7 @@ jobs:
             
               export APP_IP=$(cat ip_address.txt)
               
-              export APP_ENDPOINT="http://${APP_IP}/"
+              export APP_ENDPOINT="http://${APP_IP}:8080/"
 
               echo ${APP_ENDPOINT} 
               sleep 30s
