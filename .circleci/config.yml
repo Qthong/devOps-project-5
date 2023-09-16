@@ -5,22 +5,49 @@ version: 2.1
 # Define a job to be invoked later in a workflow.
 # See: https://circleci.com/docs/configuration-reference/#jobs
 jobs:
-  say-hello:
-    # Specify the execution environment. You can specify an image from Docker Hub or use one of our convenience images from CircleCI's Developer Hub.
-    # See: https://circleci.com/docs/configuration-reference/#executor-job
+  package:
     docker:
-      - image: cimg/base:stable
-    # Add steps to the job
-    # See: https://circleci.com/docs/configuration-reference/#steps
+      - image: maven:3.6.3-jdk-11
     steps:
       - checkout
       - run:
-          name: "Say hello"
-          command: "echo Hello, World!"
+          name: package code
+          command: mvn clean package
+  
+  test:
+    docker:
+      - image: maven:3.6.3-jdk-11
+    steps:
+      - checkout
+      - run:
+          name: package code
+          command: mvn test
 
-# Orchestrate jobs using workflows
-# See: https://circleci.com/docs/configuration-reference/#workflows
+  build-iamge:
+    docker:
+      - image: docker:17.05.0-ce-git  
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Install dependencies
+          command: |
+            apk add --no-cache py-pip=9.0.0-r1
+      - run:
+          name: Build application Docker image
+          command: |
+            docker build  -t thongnq2/dev-ops-project-5:${CIRCLE_WORKFLOW_ID:0:7} .
+      - deploy:
+          name: Push application Docker image
+          command: |
+            docker login --username $DOCKER_USERNAME --password $DOCKER_PASSWORD            
+            docker push "thongnq2/dev-ops-project-5:${CIRCLE_WORKFLOW_ID:0:7}"
 workflows:
   say-hello-workflow:
     jobs:
-      - say-hello
+      - package
+      - test:
+          requires: [package]
+      - build-iamge:
+          requires: [test]
+
