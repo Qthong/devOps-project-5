@@ -80,7 +80,7 @@ jobs:
             curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
             install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
       - run:
-          name: Config kubectl connect to aws
+          name: Config kubectl
           command: |
             aws eks update-kubeconfig --region us-east-1  --name my-cluster
       - run:
@@ -120,15 +120,37 @@ jobs:
               
               export APP_ENDPOINT="http://${APP_IP}:8080/"
 
-              echo ${APP_ENDPOINT} 
               sleep 30s
-              curl ${APP_ENDPOINT} > test.txt
-              if cat test.txt | grep "hello"
+              if curl ${APP_ENDPOINT} | grep "hello"
               then
                 exit 0
               else
                 exit 1
               fi
+
+  cleanup:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run: yum install -y tar gzip
+      - run:
+          name: Install kubectl
+          command: |
+            curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
+            install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+      - run:
+          name: Config kubectl
+          command: |
+            aws eks update-kubeconfig --region us-east-1  --name my-cluster
+      - run:
+          name: Get services in kubectl
+          command: |
+            kubectl get svc | grep cloud-devops-project5 > svc.txt            
+            sed 's/ .*//' svc.txt > old_svc.txt 
+            SERVICE=cloud-devops-project5-${CIRCLE_WORKFLOW_ID:0:7}
+            kubectl delete service $(cat old_svc.txt | sed 's/'$SERVICE'//g' | sed -r '/^\s*$/d')
+
 
 workflows:
   say-hello-workflow:
