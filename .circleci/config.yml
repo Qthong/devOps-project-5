@@ -166,6 +166,8 @@ workflows:
           requires: [setup-eks-cluster]
       - smoke-test:
           requires: [deploy]
+      - cleanup:
+          requires: [smoke-test]
 
         
 
