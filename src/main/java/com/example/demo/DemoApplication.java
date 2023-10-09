@@ -15,7 +15,7 @@ public class DemoApplication {
 
 	@GetMapping
 	public String getStringData() {
-		return "hello, this is thong project";
+		return "hello, this is thong project version 2";
 	}
 
 }
