@@ -5,25 +5,31 @@ version: 2.1
 # Define a job to be invoked later in a workflow.
 # See: https://circleci.com/docs/configuration-reference/#jobs
 jobs:
-  package:
+  verify-syntax:
     docker:
-      - image: maven:3.6.3-jdk-11
+      - image: python:3.7.3-stretch
     steps:
       - checkout
+      - run: 
+          name: "create venv"
+          command: |
+            python3 -m venv ~/.devops
       - run:
-          name: package code
-          command: mvn clean package
-  
-  test:
-    docker:
-      - image: maven:3.6.3-jdk-11
-    steps:
-      - checkout
-      - run:
-          name: package code
-          command: mvn test
+          name: "Check syntaxt"
+          command: |
+            make install
+            make lint
 
-  build-iamge:
+  build-test:
+    docker:
+      - image: maven:3.6.3-jdk-11
+    steps:
+      - checkout
+      - run:
+          name: package code
+          command: mvn clean install test
+
+  build-push-iamge:
     docker:
       - image: docker:17.05.0-ce-git  
     steps:
@@ -34,13 +40,10 @@ jobs:
           command: |
             apk add --no-cache py-pip=9.0.0-r1
       - run:
-          name: Build application Docker image
+          name: Build and push Docker image
           command: |
-            docker build  -t thongnq2/dev-ops-project-5:${CIRCLE_WORKFLOW_ID:0:7} .
-      - deploy:
-          name: Push application Docker image
-          command: |
-            docker login --username $DOCKER_USERNAME --password $DOCKER_PASSWORD            
+            docker login --username $DOCKER_USERNAME --password $DOCKER_PASSWORD     
+            docker build  -t thongnq2/dev-ops-project-5:${CIRCLE_WORKFLOW_ID:0:7} .      
             docker push "thongnq2/dev-ops-project-5:${CIRCLE_WORKFLOW_ID:0:7}"
 
   setup-eks-cluster:
@@ -75,21 +78,12 @@ jobs:
       - checkout
       - run: yum install -y tar gzip
       - run:
-          name: Install kubectl
+          name: init config kubectl
           command: |
             curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
             install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-      - run:
-          name: Config kubectl
-          command: |
-            aws eks update-kubeconfig --region us-east-1  --name my-cluster
-      - run:
-          name: create pod
-          command: |
+            aws eks update-kubeconfig --region us-east-1  --name my-cluster      
             kubectl run cloud-devops-project5-${CIRCLE_WORKFLOW_ID:0:7} --image="thongnq2/dev-ops-project-5:${CIRCLE_WORKFLOW_ID:0:7}" --port 80
-      - run:
-          name: expose pod
-          command: |
             kubectl expose pod cloud-devops-project5-${CIRCLE_WORKFLOW_ID:0:7} --type=LoadBalancer --port=8080
             sleep 1m
       - run:
@@ -139,9 +133,6 @@ jobs:
           command: |
             curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
             install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-      - run:
-          name: Config kubectl
-          command: |
             aws eks update-kubeconfig --region us-east-1  --name my-cluster
       - run:
           name: Get services in kubectl
@@ -155,13 +146,13 @@ jobs:
 workflows:
   say-hello-workflow:
     jobs:
-      - package
-      - test:
-          requires: [package]
-      - build-iamge:
-          requires: [test]
+      - verify-syntax
+      - build-test:
+          requires: [verify-syntax]
+      - build-push-iamge:
+          requires: [build-test]
       - setup-eks-cluster:
-          requires: [build-iamge]
+          requires: [build-push-iamge]
       - deploy:
           requires: [setup-eks-cluster]
       - smoke-test:
